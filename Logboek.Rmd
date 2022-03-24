@@ -1,0 +1,33 @@
+---
+title: "Logboek"
+author: "Marije Hibma"
+date: "3/8/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+17 - 02 - 2022
+
+Today We started our project! I studied the PowerPoint and read chapter 1 + 2 of the manual. Afterwards I started looking for 
+data that will be used for the project. when a useable and interesting dataset was found.
+
+---------------
+
+04 - 03 - 2022
+
+Started writing the project proposal, chapter 3 was studied. I ended at chapter 3.5.5. The project proposal had to be delivered before the 8th of March 2022 at 12:00
+
+---------------
+
+08 - 03 - 2022
+
+Started with loading and preparing the data for the EDA.
+
+---------------
+
+10 - 03 -2022
+
+Continued with the EDA. 

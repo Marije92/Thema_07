@@ -1,0 +1,159 @@
+---
+title: "Project_7"
+author: "Marije Hibma"
+date: "3/8/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pander)
+```
+
+```{r}
+file.names <- list.files('./data/GSE70935_RAW/')
+file.names
+```
+```{r}
+## Call the system 'head' tool to 'peek' inside the file
+system(paste0("head ", "./data/GSE70935_RAW/", file.names[1]))
+```
+
+```{r, eval=FALSE}
+## Function for reading in files
+read_sample <- function(file.name) {
+  ## Read the data, setting the 'transcript_id' as row.names (column 1)
+  sample <- read.table(file.name, header = TRUE, sep="\t", row.names = NULL)
+  ## Return a subset containing the 'transcript_id' and sample name columns
+  return(sample[c(1, 2)])
+}
+
+setwd('data/GSE70935_RAW/')
+
+## Read the FIRST sample
+dataset <- read_sample(file.names[1])
+
+## Read first sample group (6)
+for (file.name in file.names[2:18]) {
+  sample <- read_sample(file.name)
+  dataset <- merge(dataset, sample, by = 1)
+}
+
+row.names(dataset) <- dataset$geneID
+dataset <- dataset[, -1]
+pander(head(dataset))
+
+write.table(dataset, '../GSE70935.tsv', sep='\t')
+```
+
+```{r}
+datas <- read.table('data/GSE70935.tsv')
+
+summary(datas) 
+boxplot(datas)
+boxplot(log2(datas + 1))
+```
+```{r, eval=FALSE}
+## The affy library has a density plotting function
+library(affy)
+
+## Create a list of 4 colors to use which are the same used throughout this chapter 
+library(scales)
+
+library('DESeq2')
+
+# We use the 'pheatmap' library (install with install.packages('pheatmap'))
+library(pheatmap)
+
+library('PoiClaClu')
+library(ggplot2)
+```
+
+
+```{r}
+myColors <- hue_pal()(4)
+
+## Plot the log2-transformed data with a 0.1 pseudocount
+plotDensity(log2(datas + 0.1), col=rep(myColors, each=3),
+            lty=c(1:ncol(datas)), xlab='Log2(count)',
+            main='Expression Distribution')
+
+## Add a legend and vertical line
+legend('topright', names(datas), lty=c(1:ncol(datas)),
+       col=rep(myColors, each=3), cex = 0.5)
+abline(v=-1.5, lwd=1, col='red', lty=2)
+```
+
+
+```{r}
+barplot(colSums(datas) / 1e6)
+```
+
+```{r}
+# DESeq2 will construct a SummarizedExperiment object and combine this 
+# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
+# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
+(ddsMat <- DESeqDataSetFromMatrix(countData = datas,
+                                  colData = data.frame(samples =
+                                            names(datas)),
+                                            design = ~ 1))
+```
+```{r}
+# Perform normalization
+rld.dds <- vst(ddsMat)
+# 'Extract' normalized values
+rld <- assay(rld.dds)
+head(rld)
+```
+```{r}
+sampledists <- dist( t( rld ))
+sampledists
+```
+```{r}
+# Convert the 'dist' object into a matrix for creating a heatmap
+sampleDistMatrix <- as.matrix(sampledists)
+
+# The annotation is an extra layer that will be plotted above the heatmap columns
+# indicating the cell type
+annotation <- data.frame(Con_KD = factor(rep(rep(1:2, each=3), 3),
+                                        labels = c("Control", "CYFIP1_KD")),
+                                        Sample = factor(rep(1:3, each = 6), 
+                                        labels = c("C2", "C5", "C4")))
+                         
+# Set the rownames of the annotation dataframe to the sample names (required)
+rownames(annotation) <- names(datas)
+
+pheatmap(sampleDistMatrix, show_colnames = FALSE,
+         annotation_col = annotation,
+         clustering_distance_rows = sampledists,
+         clustering_distance_cols = sampledists,
+         main = "Euclidean Sample Distances")
+```
+
+```{r}
+# Use the raw (not r-log transformed!) counts
+dds <- assay(ddsMat)
+poisd <- PoissonDistance(t(dds))
+# Extract the matrix with distances
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+# Calculate the MDS and get the X- and Y-coordinates
+mdsPoisData <- data.frame( cmdscale(samplePoisDistMatrix) )
+
+# And set some better readable names for the columns
+names(mdsPoisData) <- c('x_coord', 'y_coord')
+```
+
+```{r}
+# Separate the annotation factor (as the variable name is used as label)
+groups <- factor(rep(1:3, each=6), 
+                 labels = c("C2", "C5", "C4"))
+coldata <- names(datas)
+
+# Create the plot using ggplot
+ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) + 
+  geom_text(size = 4) +
+  ggtitle('Multi Dimensional Scaling') +
+  labs(x = "Poisson Distance", y = "Poisson Distance") +
+  theme_bw()
+```
+

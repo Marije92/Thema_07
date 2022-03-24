@@ -1,0 +1,42 @@
+---
+title: "Thema07"
+author: "Marije Hibma"
+date: "2/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+read_sample <- function(file.name) {
+  ## Extract the sample name for naming the column
+  sample.name <- strsplit(file.name, ".", fixed = TRUE)[[1]][1]
+  ## Read the data, setting the 'transcript_id' as row.names (column 1)
+  sample <- read.table(file.name, header = TRUE, sep="\t", row.names = NULL)
+  ## Rename the count column
+  names(sample)[5] <- sample.name
+  ## Return a subset containing the 'transcript_id' and sample name columns
+  return(sample[c(1, 5)])
+}
+```
+
+```{r}
+setwd('./data')
+```
+
+```{r}
+dataset <- read_sample(file.names[1:18])
+
+for (file.name in file.names[2:6]) {
+  sample <- read_sample(file.name)
+  dataset <- merge(dataset, sample, by = 1)
+}
+```
+
+
+```{r}
+read.t
+```
+
