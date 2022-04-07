@@ -1,0 +1,348 @@
+---
+title: "Project_7"
+author: "Marije Hibma"
+date: "3/8/2022"
+output: pdf_document
+---
+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
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+library(pander)
+```
+
+```{r, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("biomaRt")
+```
+
+```{r, eval=FALSE}
+## The affy library has a density plotting function
+library(affy)
+
+## Create a list of 4 colors to use which are the same used throughout this chapter 
+library(scales)
+
+library('DESeq2')
+
+# We use the 'pheatmap' library (install with install.packages('pheatmap'))
+library(pheatmap)
+
+library('PoiClaClu')
+library(ggplot2)
+
+library(biomaRt)
+
+library(EnhancedVolcano)
+
+library(gridExtra)
+library(grid)
+```
+
+```{r}
+file.names <- list.files('./data/GSE70935_RAW/')
+file.names
+```
+```{r}
+## Call the system 'head' tool to 'peek' inside the file
+system(paste0("head ", "./data/GSE70935_RAW/", file.names[1]))
+```
+
+```{r, eval=FALSE}
+## Function for reading in files
+read_sample <- function(file.name) {
+  ## Read the data, setting the 'transcript_id' as row.names (column 1)
+  sample <- read.table(file.name, header = TRUE, sep="\t", row.names = NULL)
+  ## Return a subset containing the 'transcript_id' and sample name columns
+  return(sample[c(1, 2)])
+}
+
+setwd('data/GSE70935_RAW/')
+
+## Read the FIRST sample
+dataset <- read_sample(file.names[1])
+
+## Read first sample group (6)
+for (file.name in file.names[2:18]) {
+  sample <- read_sample(file.name)
+  dataset <- merge(dataset, sample, by = 1)
+}
+
+row.names(dataset) <- dataset$geneID
+dataset <- dataset[, -1]
+pander(head(dataset))
+
+write.table(dataset, '../GSE70935.tsv', sep='\t')
+```
+
+
+```{r}
+datas <- read.table('data/GSE70935.tsv')
+
+summary(datas) 
+boxplot(datas)
+boxplot(log2(datas + 1))
+```
+
+```{r}
+myColors <- hue_pal()(4)
+
+## Plot the log2-transformed data with a 0.1 pseudocount
+plotDensity(log2(datas + 0.1), col=rep(myColors, each=3),
+            lty=c(1:ncol(datas)), xlab='Log2(count)',
+            main='Expression Distribution')
+
+## Add a legend and vertical line
+legend('topright', names(datas), lty=c(1:ncol(datas)),
+       col=rep(myColors, each=3), cex = 0.5)
+abline(v=-1.5, lwd=1, col='red', lty=2)
+```
+
+```{r}
+barplot(colSums(datas) / 1e6)
+```
+
+```{r}
+# DESeq2 will construct a SummarizedExperiment object and combine this 
+# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
+# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
+(ddsMat <- DESeqDataSetFromMatrix(countData = datas,
+                                  colData = data.frame(samples =
+                                            names(datas)),
+                                            design = ~ 1))
+```
+
+```{r}
+# Perform normalization
+rld.dds <- vst(ddsMat)
+# 'Extract' normalized values
+rld <- assay(rld.dds)
+head(rld)
+```
+
+```{r}
+sampledists <- dist( t( rld ))
+sampledists
+```
+```{r}
+# Convert the 'dist' object into a matrix for creating a heatmap
+sampleDistMatrix <- as.matrix(sampledists)
+
+# The annotation is an extra layer that will be plotted above the heatmap columns
+# indicating the cell type
+annotation <- data.frame(Con_KD = factor(rep(rep(1:2, each=3), 3),
+                                        labels = c("Control", "CYFIP1_KD")),
+                                        Sample = factor(rep(1:3, each = 6), 
+                                        labels = c("C2", "C5", "C4")))
+                         
+# Set the rownames of the annotation dataframe to the sample names (required)
+rownames(annotation) <- names(datas)
+
+pheatmap(sampleDistMatrix, show_colnames = FALSE,
+         annotation_col = annotation,
+         clustering_distance_rows = sampledists,
+         clustering_distance_cols = sampledists,
+         main = "Euclidean Sample Distances")
+```
+
+```{r}
+# Use the raw (not r-log transformed!) counts
+dds <- assay(ddsMat)
+poisd <- PoissonDistance(t(dds))
+# Extract the matrix with distances
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+# Calculate the MDS and get the X- and Y-coordinates
+mdsPoisData <- data.frame( cmdscale(samplePoisDistMatrix) )
+
+# And set some better readable names for the columns
+names(mdsPoisData) <- c('x_coord', 'y_coord')
+```
+
+```{r}
+# Separate the annotation factor (as the variable name is used as label)
+groups <- factor(rep(1:3, each=6), 
+                 labels = c("C2", "C5", "C4"))
+groups
+coldata <- names(datas)
+
+# Create the plot using ggplot
+ggplot(mdsPoisData, aes(x_coord, y_coord, color = groups, label = coldata)) + 
+  geom_text(size = 4) +
+  ggtitle('Multi Dimensional Scaling') +
+  labs(x = "Poisson Distance", y = "Poisson Distance") +
+  theme_bw()
+```
+
+```{r}
+# EDITED
+# DESeq2 will construct a SummarizedExperiment object and combine this 
+# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
+# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
+
+
+lbs = paste0(annotation$Sample, annotation$Con_KD)
+l = c()
+for (i in 1:length(lbs)) {
+  print(i)
+    if (i %% 3 == 0) {
+      l = c(l, lbs[i])
+  }
+}
+
+
+
+groups <- factor(rep(1:6, each=3), labels = l)
+
+levels(groups)
+
+names(datas)
+
+datfilt <- data.frame(0, 0, 0, 0, 0, 0)
+
+names(datfilt) <- l
+
+
+for (i in 1:nrow(datas)) {
+  datfilt = rbind(datfilt, c(datas$C2_con1[i]+ datas$C2_con2[i]+ datas$C2_con3[i], datas$C2_kd1[i] + datas$C2_kd2[i] + datas$C2_kd3[i], datas$C5_con1[i]+ datas$C5_con2[i]+ datas$C5_con3[i], datas$C5_kd1[i] + datas$C5_kd2[i] + datas$C5_kd3[i], datas$C4_con1[i]+ datas$C4_con2[i]+ datas$C4_con3[i], datas$C4_kd1[i] + datas$C4_kd2[i] + datas$C4_kd3[i]))
+  #datfilt$C2Control[i] = c(datas$C2_con1[i]+ datas$C2_con2[i]+ datas$C2_con3[i])
+}
+
+
+datfilt = datfilt[2:nrow(datfilt),]
+
+#rownames(datfilt)
+rownames(datfilt) <- row.names(datas)
+
+```
+
+```{r}
+# Perform a naive FPM normalization
+# Note: log transformation includes a pseudocount of 1
+counts.fpm <- log2( (datfilt / (colSums(datfilt) / 1e6)) + 1 )
+
+# this design can be used with datfilt. Error: 'all variables in design formula must be columns in colData' is fixed
+# variable namea wich are put in design must be same as column names of colData (which is samples, but i changed them)
+group <- factor(c(1,2,1,2,1,2), labels = c("Control", "KD"))
+design <- model.matrix( ~ 0 + group)
+
+
+# DESeq2 will construct a SummarizedExperiment object and combine this 
+# into a 'DESeqDataSet' object. The 'design' argument usually indicates the 
+# experimental design using the condition(s) names as a 'factor', for now we use just '~ 1'
+
+# split dataframes
+df2 = data.frame(datfilt$C2Control, datfilt$C2CYFIP1_KD)
+rownames(df2) = rownames(datas)
+colnames(df2) = c("C2Control", "C2CYFIP1_KD")
+
+df5 = data.frame(datfilt$C5Control, datfilt$C5CYFIP1_KD)
+rownames(df5) = rownames(datas)
+colnames(df5) = c("C5Control", "C5CYFIP1_KD")
+
+df4 = data.frame(datfilt$C4Control, datfilt$C4CYFIP1_KD)
+rownames(df4) = rownames(datas)
+colnames(df4) = c("C4Control", "C4CYFIP1_KD")
+
+# create design (which can't be used at the moment)
+gr = factor(c('Control', 'KD'))
+des <- model.matrix( ~ 0 + gr)
+
+# create C2 Deseq matrix with design ~ 1 for some reasons
+cdf2 = data.frame(samples = names(df2))
+colnames(cdf2) = c('des')
+
+ddsMat2 <- DESeqDataSetFromMatrix(countData = df2, colData = cdf2, design = ~1)
+dds2 <- DESeq(ddsMat2)
+res2 <- results(dds2)
+head(results(dds2, tidy=TRUE)) # let's look at the results table
+
+# create C5 Deseq matrix with design ~ 1 for some reasons
+cdf5 = data.frame(samples = names(df5))
+colnames(cdf5) = c('des')
+
+ddsMat5 <- DESeqDataSetFromMatrix(countData = df5, colData = cdf5, design = ~1)
+dds5 <- DESeq(ddsMat5)
+res5 <- results(dds5)
+head(results(dds5, tidy=TRUE)) # let's look at the results table
+
+# create C4 Deseq matrix with design ~ 1 for some reasons
+cdf4 = data.frame(samples = names(df4))
+colnames(cdf4) = c('des')
+
+ddsMat4 <- DESeqDataSetFromMatrix(countData = df4, colData = cdf4, design = ~1)
+dds4 <- DESeq(ddsMat4)
+res4 <- results(dds4)
+head(results(dds4, tidy=TRUE)) # let's look at the results table
+
+```
+
+```{r}
+## Simple function for plotting a Volcano plot, returns a ggplot object
+deseq.volcano <- function(res, datasetName) {
+  return(EnhancedVolcano(res, x = 'log2FoldChange', y = 'padj',
+                         lab=rownames(res),
+                         title = paste(datasetName, "trisomic vs disomic"),
+                         subtitle = bquote(italic('FDR <= 0.05 and absolute FC >= 2')),
+                         # Change text and icon sizes
+                         labSize = 3, pointSize = 1.5, axisLabSize=10, titleLabSize=12,
+                         subtitleLabSize=8, captionLabSize=10,
+                         # Disable legend
+                         legendPosition = "none",
+                         # Set cutoffs
+                         pCutoff = 0.05, FCcutoff = 2))
+}
+
+## Note: input data is the corrected DESeq2 output using the 'lfcShrink' function (see chapter 4)
+# make 3 volcano plots and put them next to eachother
+vp2 = deseq.volcano(res = res2, datasetName = "C2")
+vp5 = deseq.volcano(res = res5, datasetName = "C5")
+vp4 = deseq.volcano(res = res4, datasetName = "C4")
+grid.arrange(vp2, vp5, vp4, ncol=3, top = textGrob('EnhancedVolcano',just = c('center'),gp = gpar(fontsize = 32)))
+```
+
+```{r}
+# ensembl=useMart("ENSEMBL_MART_ENSEMBL", host="https://www.ensembl.org")
+# ensembl <- useMart("ensembl")
+# ensembl <- useDataset('hsapiens_gene_ensembl', mart = ensembl)
+```
+
+```{r}
+# Set the 'attributes' values
+# attrs.get <- c("ensembl_gene_id", "chromosome_name", 
+#                "start_position","end_position", "description", "hgnc_symbol")
+
+# Perform a biomaRt query using 'getBM'
+# results <- getBM(attributes = attrs.get,
+#                  filters = "ensembl_gene_id",
+#                  values = rownames(datas)[1:5], 
+#                  mart = ensembl)
+```
+
+```{r}
+# Perform a naive FPM normalization
+# Note: log transformation includes a pseudocount of 1
+counts.fpm <- log2( (counts / (colSums(counts) / 1e6)) + 1 )
+```
+
+```{r}
+pval_threshold <- 0.05
+degs2 <- row.names(res2[which(res2$padj <= pval_threshold), ])
+degs5 <- row.names(res5[which(res5$padj <= pval_threshold), ])
+degs4 <- row.names(res4[which(res4$padj <= pval_threshold), ])
+# Arguments for a pairwise (two-sets) venn-diagram are sizes for set1, set2 and overlap (intersect)
+# Many more functions are available for triple, quad and quantuple diagrams (starting with 'draw.***')
+venn.plot <- draw.triple.venn(length(degs2),
+                              length(degs5),
+                              length(degs4), 
+                                # Calculate the intersection of the two sets
+                                length( degs2),
+                                category = c("DEGS C2", "DEGS C5", "DEGS C4"), scaled = F,
+                                fill = c("light blue", "red", "yellow"), alpha = rep(0.5, 2, 0),
+                                cat.pos = c(0, 0, 0))
+
+# Actually plot the plot
+grid.draw(venn.plot)
+```
+
